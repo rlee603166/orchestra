@@ -1,6 +1,7 @@
 import time
 import random
 from flask import Flask, jsonify, render_template, jsonify
+from asgiref.wsgi import WsgiToAsgi
 
 app = Flask(__name__)
 
@@ -31,6 +32,8 @@ def training_data():
 def dashboard():
     return render_template("dashboard.html")
 
+asgi_app = WsgiToAsgi(app)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    import uvicorn
+    uvicorn.run(asgi_app, host="0.0.0.0", port=5000)
