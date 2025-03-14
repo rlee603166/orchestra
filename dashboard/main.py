@@ -1,9 +1,14 @@
-import time
-import random
 from flask import Flask, jsonify, render_template, jsonify
 from asgiref.wsgi import WsgiToAsgi
+from flask_cors import CORS
+import requests
+import random
+import json
+import time
+
 
 app = Flask(__name__)
+CORS(app)
 
 simulated_data = { "steps": [], "loss": [] }
 start_time = time.time()
@@ -23,14 +28,22 @@ def simulate_training():
     return {"steps": steps, "loss": loss, "accuracy": accuracy}
 
 
-@app.route('/training_data')
-def training_data():
-    return jsonify(simulate_training())
-
-
-@app.get("/")
+@app.route("/")
 def dashboard():
     return render_template("dashboard.html")
+
+@app.route("/ping")
+def ping():
+    url = "http://0.0.0.0:5000/training_data"
+    x = requests.get(url)
+    return x.json()
+
+@app.route('/train', methods=["POST"])
+def train():
+    url = "http://0.0.0.0:5000/train"
+    x = requests.post(url)
+    return x.json()
+
 
 asgi_app = WsgiToAsgi(app)
 

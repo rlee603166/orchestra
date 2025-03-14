@@ -18,17 +18,18 @@ const lossChart = new Chart(ctx, {
 });
 
 function updateChart() {
-    fetch("/training_data")
+    console.log("fetching");
+    fetch("http://localhost:5000/training_data")
         .then(response => response.json())
         .then(data => {
             lossChart.data.labels = data.steps;
             lossChart.data.datasets[0].data = data.loss;
-            lossChart.data.datasets[1].data = data.accuracy;
+            // lossChart.data.datasets[1].data = data.accuracy;
             lossChart.update();
             document.getElementById("currentLoss").textContent =
                 data.loss[data.loss.length - 1].toFixed(2);
-            document.getElementById("currentAcc").textContent =
-                (data.accuracy[data.accuracy.length - 1] * 100).toFixed(0) + "%";
+            // document.getElementById("currentAcc").textContent =
+            //     (data.accuracy[data.accuracy.length - 1] * 100).toFixed(0) + "%";
         });
 }
 
