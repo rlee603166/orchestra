@@ -19,7 +19,10 @@ const lossChart = new Chart(ctx, {
 
 function updateChart() {
     console.log("fetching");
-    fetch("http://localhost:5000/training_data")
+    fetch('http://47.144.148.193:5000/training_data', {
+        method: 'GET',
+        mode: 'no-cors'
+    })
         .then(response => response.json())
         .then(data => {
             lossChart.data.labels = data.steps;
