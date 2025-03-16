@@ -15,7 +15,7 @@ log_data = { "steps": [], "loss": [], "accuracy":[] }
 stop_training = threading.Event()
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "http://localhost:8080"}})
+CORS(app, resources={r"/*": {"origins": "http://47.144.148.193:8080"}})
 asgi_app = WsgiToAsgi(app)
 
 

@@ -34,7 +34,15 @@ body {
     font-family: Arial, Helvetica, sans-serif;
 }
 
+.title-container {
+    display: flex;
+    flex-direction: column;
+}
+
 .header-content {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
     flex: 0 0 auto;
     padding: 1rem 2rem;
     background-color: white;
@@ -53,6 +61,36 @@ body {
     font-size: 1rem;
     color: #666;
     margin-top: 0.5rem;
+}
+
+.control-buttons {
+    display: flex;
+    justify-content: center;
+    margin: 15px 0;
+}
+
+.start-button {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 16px;
+    margin: 4px 2px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+}
+
+.start-button:hover {
+    background-color: #45a049;
+}
+
+.start-button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
 }
 
 .center-content {

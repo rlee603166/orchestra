@@ -17,12 +17,13 @@ const lossChart = new Chart(ctx, {
     },
 });
 
+
+let updateInterval;
+let isTraining = false;
+
 function updateChart() {
     console.log("fetching");
-    fetch('http://47.144.148.193:5000/training_data', {
-        method: 'GET',
-        mode: 'no-cors'
-    })
+    fetch('http://47.144.148.193:5000/training_data')
         .then(response => response.json())
         .then(data => {
             lossChart.data.labels = data.steps;
@@ -36,5 +37,37 @@ function updateChart() {
         });
 }
 
+function startTraining() {
+    if (isTraining) return;
+    
+    fetch('http://47.144.148.193:5000/train', {
+        method: 'POST',
+    })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Training started:', data);
+            
+            isTraining = true;
+            document.getElementById('startTraining').textContent = 'Training...';
+            document.getElementById('startTraining').disabled = true;
+            
+            updateChart();
+            updateInterval = setInterval(updateChart, 1000);
+        })
+        .catch(error => {
+            console.error('Error starting training:', error);
+            alert('Failed to start training. Please check the console for details.');
+        });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const startButton = document.getElementById('startTraining');
+    startButton.addEventListener('click', startTraining);
+});
+
 updateChart();
-setInterval(updateChart, 1000);
