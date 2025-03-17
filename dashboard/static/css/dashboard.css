@@ -65,12 +65,13 @@ body {
 
 .control-buttons {
     display: flex;
+    flex-direction: row;
     justify-content: center;
     margin: 15px 0;
 }
 
-.start-button {
-    background-color: #4CAF50;
+.start-button,
+.stop-button {
     color: white;
     border: none;
     padding: 10px 20px;
@@ -80,15 +81,32 @@ body {
     font-size: 16px;
     margin: 4px 2px;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 6px;
     transition: background-color 0.3s;
+}
+
+.start-button {
+    background-color: #58d15c;
+}
+
+.stop-button {
+    background-color: #eb0c0c;
 }
 
 .start-button:hover {
     background-color: #45a049;
 }
 
+.stop-button:hover {
+    background-color: #c83a3a;
+}
+
 .start-button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+}
+
+.stop-button:disabled {
     background-color: #cccccc;
     cursor: not-allowed;
 }
