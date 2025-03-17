@@ -1,81 +1,128 @@
 from asgiref.wsgi import WsgiToAsgi
-from flask import Flask, jsonify
-from model import Model, get_batch
 from flask_cors import CORS
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from fastapi import FastAPI
 import threading
 import subprocess
 import torch
 import json
 
-device = "cuda"
-MAX_ITERS = 5000
+
+"""Hyperparameters"""
+MODEL_NAME = "EleutherAI/pythia-6.9b"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+BATCH_SIZE = 8
+MAX_LENGTH = 128
+MAX_ITERS = 50
 LOG_FILE = "training_data.json"
-log_data = { "steps": [], "loss": [], "accuracy":[] }
 
-stop_training = threading.Event()
 
-app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "http://47.144.148.193:8080"}})
+"""App Setup"""
+app = FastAPI()
 asgi_app = WsgiToAsgi(app)
 
 
-def get_gpu_usage():
-    try:
-        return subprocess.check_output(["rocm-smi", "--showuse"], universal_newlines=True)
-    except FileNotFoundError:
-        return "ROCm not installed or `rocm-smi` not found"    
+""""Model and tokenizer"""
+model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.float16) 
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+tokenizer.pad_token = tokenizer.eos_token
+model.to(DEVICE)
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+scaler = torch.amp.GradScaler(DEVICE)
+
+"""Data"""
+dummy_text = ["Hello world" * 10] * BATCH_SIZE
+batch = tokenizer(
+    dummy_text,
+    return_tensors="pt",
+    max_length=MAX_LENGTH,
+    truncation=True,
+    padding=True
+)
+
+""""Trainining"""
+stop_training = threading.Event()
+log_data = { "steps": [], "loss": [], "accuracy":[] }
+current_step = 0
+last_loss = 0.0
+last_accuracy = 0.0
+
 
 def training_loop():
-    while not stop_training.is_set():
-        model = Model().to(device)
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    global current_step, last_loss
+    while not stop_training.is_set() and current_step < MAX_ITERS:
+        optimizer.zero_grad()
+        with torch.amp.autocast(DEVICE):
+            outputs = model(**batch, labels=batch["input_ids"])
+            loss = outputs.loss
+            logits = outputs.logits
 
-        for iter in range(MAX_ITERS):
-            xb, yb = get_batch('train')
+        preds = torch.argmax(logits, dim=-1)
+        labels = batch["input_ids"]
+        mask = batch["attention_mask"].bool()
+        correct = (preds == labels) & mask
+        accuracy = correct.sum().float() / mask.sum()
 
-            logits, loss = model(xb, yb)
-            optimizer.zero_grad(set_to_none=True)
-            loss.backward()
-            optimizer.step()
+        scaler.scaler(loss).backwards()
+        scaler.step(optimizer)
+        scaler.update()
 
-            log_data["steps"].append(iter)
-            log_data["loss"].append(loss.item())
-            # log_data["accuracy"].append(logits.item())
-            with open(LOG_FILE, "w") as f:
-                    json.dump(log_data, f)
+        last_loss = loss.item()
+        last_accuracy = accuracy.item()
+        log_data["steps"].append(current_step)
+        log_data["loss"].append(last_loss)
+        log_data["accuracy"].append(last_accuracy)
+        with open(LOG_FILE, "w") as f:
+            json.dump(log_data, f)
+        
+        current_step+=1
+        print(f"Step: {current_step}/{MAX_ITERS}, Loss: {last_loss}, Accuracy: {last_accuracy}")
 
 
-@app.route("/")
+def get_specific(name):
+    model = AutoModelForCausalLM.from_pretrained(name).to(DEVICE)
+    tokenizer = AutoTokenizer.from_pretrained(name)
+    return model, tokenizer
+
+
+@app.get("/")
 def hello():
     return { "message": "Hello from compute node"}
 
+@app.post("/pretrained-inference")
+def pretrained_inference(prompt: str):
+    inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
+    outputs = model.generate(**inputs, max_length=100)
+    return { "response": tokenizer.decode(outputs[0], skip_special_tokens=True) }
 
-@app.route("/train", methods=["POST"])
+
+@app.get("/train")
 def train():
-    try:
-        global stop_training
-        stop_training.clear()
-        threading.Thread(target=training_loop, daemon=True).start()       
-        return jsonify({ "status": "success" })
-    except:
-        return jsonify({ "status": "failed" })
+    global stop_training, current_step
+    stop_training.clear()
+    current_step = 0
+    threading.Thread(target=training_loop, daemon=True).start()       
+    return { "status": "success" }
+   
+
+@app.post("/stop")
+def stop():
+    global stop_training
+    stop_training.set()
+    return { "status": "stopped" }
 
 
-@app.route("/stats")
+@app.get("/stats")
 def stats():
-    # nvidia gpus
-    # gpu_usage = torch.cuda.utilization()
-    # return jsonify({ "gpu": gpu_usage }) 
-    gpu_usage = get_gpu_usage()
-    return jsonify({ "gpu": gpu_usage })    
+    return {
+        "gpu_usage": {
+            "vram_used_gpu": torch.cuda.memory_allocated(0) / 1024**3,
+            "vram_total_gb": torch.cuda.get_device_properties(0).total_memory / 1024**3
+        }
+    }
 
 
-@app.route("/training_data")
+@app.get("/training_data")
 def training_data():
     with open(LOG_FILE, "r") as f:
-        return jsonify(json.load(f))
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(asgi_app, host="0.0.0.0", port=5000)
+        return json.load(f)
