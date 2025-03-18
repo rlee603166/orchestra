@@ -2,35 +2,37 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
     <title>Orchestra</title>
-    <link rel="stylesheet" href="../static/css/dashboard.css">
-    <!-- Load Chart.js from CDN -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=1.1" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
     <div class="header-content">
-        <div class="title">
-            Distributed ML Cluster - 20 GPUs on Wi-Fi
+        <div class="title-container">
+            <div class="title">Distributed ML Cluster - 10 GPUs on Wi-Fi</div>
+            <div class="metadata">Epoch <span id="epoch">1</span>/10 | Step <span id="step">0</span>/50 | Mar 17, 2025
+            </div>
         </div>
-        <div class="metadata">
-            Epoch 4/10 | Step 120/200 | Mar 02, 2025 14:35
+        <div class="control-buttons">
+            <button id="startTraining" class="start-button">Start Training</button>
+            <button id="stopTraining" class="stop-button">Stop Training</button>
         </div>
     </div>
     <div class="center-content">
         <div class="graph">
-            <p>Loss: <span id="currentLoss"></span> ↓ | Acc: <span id="currentAcc"></span> ↑</p>
+            <p>Loss: <span id="currentLoss">0.0</span> ↓ | Acc: <span id="currentAcc">0%</span> ↑</p>
             <canvas id="chart"></canvas>
         </div>
-        <div class="gpus"></div>
+        <div class="nodes">
+            <h2>Compute Nodes (10 GPUs)</h2>
+            <div id="nodeList" class="node-grid"></div>
+        </div>
     </div>
-    <div class="nodes"></div>
-
-    <!-- Remove type="module" and use a regular script -->
-    <script src="../static/js/loss.js"></script>
+    <script src="{{ url_for('static', filename='js/loss.js') }}"></script>
 </body>
 
 </html>
