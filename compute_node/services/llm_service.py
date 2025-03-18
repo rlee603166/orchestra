@@ -22,8 +22,8 @@ class LLMService:
         self.last_accuracy = 0.0
 
         """"Models and Data"""
-        self._initialize_model()
-        self._initialize_data()
+        # self._initialize_model()
+        # self._initialize_data()
 
 
     def _initialize_model(self):
