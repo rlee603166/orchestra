@@ -63,6 +63,7 @@ def hello():
 def temp():
     return llm_service.batch["train"][0]
 
+
 """Training Endpoints"""
 @app.post("/train")
 def train():
@@ -86,6 +87,7 @@ def stats():
 def cleanup_memory():
     return llm_service.cleanup_memory()
 
+
 """Inference Endpoints"""
 class InferenceRequest(BaseModel):
     model: str | None = None
@@ -94,6 +96,7 @@ class InferenceRequest(BaseModel):
 @app.post("/pretrained-inference")
 def pretrained_inference(request: InferenceRequest):
     return llm_service.run_inference(request.prompt)
+
 
 if __name__ == "__main__":
     import uvicorn
