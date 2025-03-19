@@ -115,9 +115,10 @@ let isTraining = false;
 
 function updateChart() {
     console.log("fetching");
-    fetch("http://128.151.20.130:5000/training_data")
+    fetch("http://47.144.148.193:5000/training_data")
         .then(response => response.json())
         .then(data => {
+            console.log(data, null, 2);
             // Update loss chart
             lossChart.data.labels = data.steps;
             lossChart.data.datasets[0].data = data.loss;
@@ -149,12 +150,10 @@ document.getElementById("stopTraining").disabled = true;
 function startTraining() {
     if (isTraining) return;
 
-    fetch("http://128.151.20.130:5000/train", {
+    fetch("http://47.144.148.193:5000/train", {
         method: "POST",
-        mode: "no-cors",
     })
         .then(response => {
-            console.log(response.json());
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
@@ -180,7 +179,7 @@ function startTraining() {
 function stopTraining() {
     if (!isTraining) return;
 
-    fetch("http://128.151.20.130:5000/stop", {
+    fetch("http://47.144.148.193:5000/train", {
         method: "POST",
     })
         .then(response => {
