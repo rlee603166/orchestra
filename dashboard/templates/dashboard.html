@@ -13,7 +13,7 @@
 <body>
     <div class="header-content">
         <div class="title-container">
-            <div class="title">Distributed ML Cluster - 10 GPUs on Wi-Fi</div>
+            <div class="title">Distributed R1 Cluster</div>
             <div class="metadata">Epoch <span id="epoch">1</span>/10 | Step <span id="step">0</span>/50 | Mar 17, 2025
             </div>
         </div>
@@ -23,16 +23,27 @@
         </div>
     </div>
     <div class="center-content">
-        <div class="graph">
-            <p>Loss: <span id="currentLoss">0.0</span> ↓ | Acc: <span id="currentAcc">0%</span> ↑</p>
-            <canvas id="chart"></canvas>
+        <div class="graph-container">
+            <div class="graph">
+                <p>Loss: <span id="currentLoss">0.0</span> ↓</p>
+                <div class="chart-wrapper">
+                    <canvas id="lossChart"></canvas>
+                </div>
+            </div>
+            <div class="graph">
+                <p>Accuracy: <span id="currentAcc">0%</span> ↑</p>
+                <div class="chart-wrapper">
+                    <canvas id="accuracyChart"></canvas>
+                </div>
+            </div>
         </div>
-        <div class="nodes">
-            <h2>Compute Nodes (10 GPUs)</h2>
+        <div class="gpus">
+            <h2 id="gpu-header"></h2>
             <div id="nodeList" class="node-grid"></div>
         </div>
     </div>
     <script src="{{ url_for('static', filename='js/loss.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/gpus.js') }}"></script>
 </body>
 
 </html>
