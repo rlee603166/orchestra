@@ -1,12 +1,9 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from prompts import prompt_style, train_prompt_style
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from fastapi import FastAPI, Response, status
+from fastapi import FastAPI
 from services import SFTService
-import threading
-import subprocess
 import torch
-import json
 import atexit
 import signal
 import sys
@@ -21,37 +18,6 @@ MAX_LENGTH = 128
 MAX_ITERS = 50
 LOG_FILE = "training_data.json"
 
-"""Prompts"""
-prompt_style = """Below is an instruction that describes a task, paired with an input that provides further context. 
-Write a response that appropriately completes the request. 
-Before answering, think carefully about the question and create a step-by-step chain of thoughts to ensure a logical and accurate response.
-
-### Instruction:
-You are a medical expert with advanced knowledge in clinical reasoning, diagnostics, and treatment planning. 
-Please answer the following medical question. 
-
-### Question:
-{}
-
-### Response:
-<think>{}"""
-
-train_prompt_style = """Below is an instruction that describes a task, paired with an input that provides further context. 
-Write a response that appropriately completes the request. 
-Before answering, think carefully about the question and create a step-by-step chain of thoughts to ensure a logical and accurate response.
-
-### Instruction:
-You are a medical expert with advanced knowledge in clinical reasoning, diagnostics, and treatment planning. 
-Please answer the following medical question. 
-
-### Question:
-{}
-
-### Response:
-<think>
-{}
-</think>
-{}"""
 
 
 """App Setup"""
