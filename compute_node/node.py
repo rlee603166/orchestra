@@ -103,6 +103,12 @@ def train():
 def stop():
     return service.stop()
 
+@app.get("/status")
+def get_status():
+    data = service.callback_handler.current_stats
+    return { "status": data["is_training"] }
+
+
 @app.get("/training_data")
 def training_data():
     return service.get_training_data()

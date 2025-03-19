@@ -115,17 +115,17 @@ let isTraining = false;
 
 function updateChart() {
     console.log("fetching");
-    fetch("http://47.144.148.193:5000/training_data")
+    fetch("http://128.151.20.178:5000/training_data")
         .then(response => response.json())
         .then(data => {
             console.log(data, null, 2);
             // Update loss chart
-            lossChart.data.labels = data.steps;
+            lossChart.data.labels = data.iterations;
             lossChart.data.datasets[0].data = data.loss;
             lossChart.update();
 
             // Update accuracy chart
-            accChart.data.labels = data.steps;
+            accChart.data.labels = data.iterations;
             accChart.data.datasets[0].data = data.accuracy;
             accChart.update();
 
@@ -138,19 +138,18 @@ function updateChart() {
 }
 
 function startUpdate() {
-    updateInterval = setInterval(updateChart, 1000);
+    updateInterval = setInterval(updateChart, 5000);
 }
 
 function stopUpdate() {
     clearInterval(updateInterval);
 }
 
-document.getElementById("stopTraining").disabled = true;
 
 function startTraining() {
     if (isTraining) return;
 
-    fetch("http://47.144.148.193:5000/train", {
+    fetch("http://128.151.20.178:5000/train", {
         method: "POST",
     })
         .then(response => {
@@ -179,7 +178,7 @@ function startTraining() {
 function stopTraining() {
     if (!isTraining) return;
 
-    fetch("http://47.144.148.193:5000/train", {
+    fetch("http://128.151.20.178:5000/stop", {
         method: "POST",
     })
         .then(response => {
@@ -203,6 +202,7 @@ function stopTraining() {
             alert("Failed to stop training. Please check the console for details.");
         });
 }
+
 
 const startButton = document.getElementById("startTraining");
 startButton.addEventListener("click", startTraining);

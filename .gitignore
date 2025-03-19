@@ -8,9 +8,9 @@ __pycache__/
 DeepSeek-R1-Medical-COT
 outputs
 unsloth_compiled_cache
-compute_node\unsloth_compiled_cache
+compute_node/unsloth_compiled_cache
 wandb
-compute_node\r1-fine-tuned\
+compute_node/r1-fine-tuned
 # C extensions
 *.so
 

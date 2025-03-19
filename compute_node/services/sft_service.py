@@ -1,3 +1,4 @@
+import unsloth
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
 from unsloth import FastLanguageModel, is_bfloat16_supported
 from .custom_callback import CustomCallback
@@ -27,7 +28,7 @@ class SFTService:
         """Training State"""
         self.stop_training = threading.Event()
         self.training_thread = None
-        self.callback_handler = CustomCallback(log_file=log_file)
+        self.callback_handler = None
 
         """"Models and Data"""
         self._initialize_model()
@@ -132,14 +133,19 @@ class SFTService:
             packing=True,
         )
 
+        self.callback_handler = CustomCallback(log_file=self.log_file, stop_event=self.start_training)
         self.trainer.add_callback(self.callback_handler)
 
     def _training_loop(self):
         try:
             torch.cuda.empty_cache()
+               
             self.trainer.train()
         except Exception as e:
-            print(f"Training error: {e}")
+            if self.stop_training.is_set():
+                print("Training was manually stopped")
+            else:
+                print(f"Training error: {e}")
         finally:
             torch.cuda.empty_cache()
             print("Training thread terminated and CUDA memory cleaned")
@@ -154,8 +160,8 @@ class SFTService:
         self.stop_training.clear()
 
         if new_loop:
-            # Reset callback data
-            self.callback_handler = CustomCallback(log_file=self.log_file)
+            self.trainer.remove_callback(self.callback_handler)
+            self.callback_handler = CustomCallback(log_file=self.log_file, stop_event=self.stop_training)
             self.trainer.add_callback(self.callback_handler)
 
         self.training_thread = threading.Thread(target=self._training_loop, daemon=True)
@@ -166,11 +172,15 @@ class SFTService:
     def stop(self):
         """Stop training"""
         self.stop_training.set()
+        print("Stop training requested - waiting for training loop to terminate...")
         
         if self.training_thread and self.training_thread.is_alive():
             self.training_thread.join(timeout=5)
             
-        return { "status": "stopped" }
+        return { 
+            "status": "stopped", 
+            "message": "Training stop signal sent and processed" 
+        }
 
     def _get_gpu_temp(self):
         try:
@@ -220,7 +230,7 @@ class SFTService:
             total_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
             util = self._get_gpu_util() 
             temp = self._get_gpu_temp() 
-            status = self._catogorize_gpu_status(util, int(used_memory/total_memory), temp)
+            status = self._catogorize_gpu_status(util, int(used_memory/total_memory*100), temp)
             return {
                 "gpu_stats": {
                     "vram_used_gpu": round(used_memory, 2),
