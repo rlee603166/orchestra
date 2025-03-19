@@ -2,7 +2,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi import FastAPI, Response, status
-from services import LLMService
+from services import SFTService
 import threading
 import subprocess
 import torch
@@ -21,6 +21,38 @@ MAX_LENGTH = 128
 MAX_ITERS = 50
 LOG_FILE = "training_data.json"
 
+"""Prompts"""
+prompt_style = """Below is an instruction that describes a task, paired with an input that provides further context. 
+Write a response that appropriately completes the request. 
+Before answering, think carefully about the question and create a step-by-step chain of thoughts to ensure a logical and accurate response.
+
+### Instruction:
+You are a medical expert with advanced knowledge in clinical reasoning, diagnostics, and treatment planning. 
+Please answer the following medical question. 
+
+### Question:
+{}
+
+### Response:
+<think>{}"""
+
+train_prompt_style = """Below is an instruction that describes a task, paired with an input that provides further context. 
+Write a response that appropriately completes the request. 
+Before answering, think carefully about the question and create a step-by-step chain of thoughts to ensure a logical and accurate response.
+
+### Instruction:
+You are a medical expert with advanced knowledge in clinical reasoning, diagnostics, and treatment planning. 
+Please answer the following medical question. 
+
+### Question:
+{}
+
+### Response:
+<think>
+{}
+</think>
+{}"""
+
 
 """App Setup"""
 app = FastAPI()
@@ -32,16 +64,18 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-llm_service = LLMService(
+service = SFTService(
     model_id=MODEL_NAME,
     device=DEVICE,
     max_iters=MAX_ITERS,
-    log_file=LOG_FILE
+    log_file=LOG_FILE,
+    prompt_style=prompt_style,
+    train_prompt_style=train_prompt_style
 )
 
 def cleanup_resources():
     """Cleanup on exit"""
-    llm_service.cleanup_resources()
+    service.cleanup_resources()
 
 def handle_signal(signum, frame):
     print(f"Received signal {signum}, exiting...")
@@ -59,33 +93,29 @@ signal.signal(signal.SIGINT, handle_signal)
 def hello():
     return { "message": "Hello from compute node" }
 
-@app.get("/data")
-def temp():
-    return llm_service.batch["train"][0]
-
 
 """Training Endpoints"""
 @app.post("/train")
 def train():
-    return llm_service.start_training()
+    return service.start_training()
 
 @app.post("/stop")
 def stop():
-    return llm_service.stop_training()
+    return service.stop()
 
 @app.get("/training_data")
 def training_data():
-    return llm_service.get_training_data()
+    return service.get_training_data()
 
 
 """GPU Endpoints"""
 @app.get("/stats")
 def stats():
-    return llm_service.get_gpu_stats()
+    return service.get_gpu_stats()
 
 @app.post("/cleanup_memory")
 def cleanup_memory():
-    return llm_service.cleanup_memory()
+    return service.cleanup_memory()
 
 
 """Inference Endpoints"""
@@ -95,7 +125,7 @@ class InferenceRequest(BaseModel):
 
 @app.post("/pretrained-inference")
 def pretrained_inference(request: InferenceRequest):
-    return llm_service.run_inference(request.prompt)
+    return service.run_inference(request.prompt)
 
 
 if __name__ == "__main__":
