@@ -4,7 +4,15 @@ import torch.optim as optim
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
+import signal
+import sys
 
+def signal_handler(sig, frame):
+    print("Ctrl+C pressed. Cleaning up...")
+    cleanup()
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
 
 class ToyModel(nn.Module):
     def __init__(self):
@@ -30,6 +38,7 @@ def setup(rank, world_size):
 
     dist.init_process_group(
         "gloo",
+        init_method=f"tcp://{master_addr}:{master_port}",
         store=store,
         rank=rank,
         world_size=world_size
