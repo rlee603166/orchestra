@@ -46,7 +46,6 @@ def setup(rank, world_size):
 
     dist.init_process_group(
         "gloo",
-        init_method=f"tcp://{master_addr}:{master_port}",
         store=store,
         rank=rank,
         world_size=world_size,
