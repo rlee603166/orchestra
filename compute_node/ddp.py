@@ -30,11 +30,9 @@ class ToyModel(nn.Module):
         return self.net2(self.relu(self.net1(x)))
 
 def setup(rank, world_size):
-    if rank != 0:
-        master_addr = '128.151.20.178'
-    else: 
-        master_addr = 'localhost'
-    master_port = '23456'
+    master_addr = 'fe80::e212:9b09:f6b6:f83c'
+    # master_addr = 'localhost'
+    master_port = '5003'
 
     store = dist.TCPStore(
         master_addr,
@@ -50,6 +48,18 @@ def setup(rank, world_size):
         rank=rank,
         world_size=world_size,
     )
+
+    # os.environ['MASTER_ADDR'] = 
+    # os.environ['MASTER_PORT'] = '9999'
+    # os.environ['RANK'] = '0'
+    # os.environ['WORLD_SIZE'] = '2'
+    # dist.init_process_group(
+    #     backend="gloo",
+    #     init_method="env://",
+    #     world_size=2,
+    #     rank=rank,
+    # )
+
 
 def cleanup():
     dist.destroy_process_group()
