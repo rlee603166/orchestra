@@ -21,16 +21,16 @@ def setup(rank, world_size):
     master_port = '8081'
 
     store = dist.TCPStore(
-        host_name=master_addr,
-        port=master_port,
-        world_size=rank,
-        is_master=(world_size==0)
+        master_addr,
+        int(master_port),
+        world_size,
+        is_master=(rank==0),
+        use_libuv=False
     )
 
     dist.init_process_group(
         "gloo",
         store=store,
-        init_method=f"tcp//{master_addr}:{master_port}",
         rank=rank,
         world_size=world_size
     )
@@ -42,23 +42,28 @@ def demo_basic(rank, world_size):
     print(f"Running basic DDP example on rank {rank}.")
     setup(rank, world_size)
     
-    model = ToyModel().to("cuda")
-    ddp_model = DDP(model)
+    device = torch.device(f"cuda:{rank}")
+    model = ToyModel().to(device)
+    ddp_model = DDP(model, device_ids=[rank])
     
     loss_fn = nn.MSELoss()
     optimizer = optim.SGD(ddp_model.parameters(), lr=0.001)
     
     optimizer.zero_grad()
-    outputs = ddp_model(torch.randn(20, 10))
-    labels = torch.randn(20,5).to(rank)
-    loss_fn(outputs, labels).backward()
+    outputs = ddp_model(torch.randn(20, 10).to(device))
+    labels = torch.randn(20,5).to(device)
+    loss = loss_fn(outputs, labels)
+    loss.backwards()
     optimizer.step()
 
     cleanup()
     print(f"Finished running basic DDP example on rank {rank}.")
 
-def run_demo(demo_fn, world_size):
-    mp.spawn(demo_fn,
-             args=(world_size,),
-             nprocs=world_size,
-             join=True)
+if __name__ == "__main__":
+    import argparse
+    world_size = 2
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--rank", type=int, required=True, help="Rank of the current process")
+    args = parser.parse_args()
+
+    demo_basic(args.rank, world_size)
