@@ -30,24 +30,36 @@ class ToyModel(nn.Module):
         return self.net2(self.relu(self.net1(x)))
 
 def setup(rank, world_size):
-    master_addr = 'fe80::e212:9b09:f6b6:f83c'
-    # master_addr = 'localhost'
-    master_port = '5003'
+    # master_addr = '128.151.20.130'
+    # # master_addr = 'localhost'
+    # master_port = '5003'
 
-    store = dist.TCPStore(
-        master_addr,
-        int(master_port),
-        world_size,
-        is_master=(rank==0),
-        use_libuv=False
-    )
+    # store = dist.TCPStore(
+    #     master_addr,
+    #     int(master_port),
+    #     world_size,
+    #     is_master=(rank==0),
+    #     use_libuv=False
+    # )
 
+    # dist.init_process_group(
+    #     "gloo",
+    #     store=store,
+    #     rank=rank,
+    #     world_size=world_size,
+    # )
+
+    os.environ['MASTER_ADDR'] = '128.151.20.1300'  # Your Ethernet IP
+    os.environ['MASTER_PORT'] = '5003'
+    os.environ['RANK'] = str(rank)
+    os.environ['WORLD_SIZE'] = str(world_size)
+    
+    # Use env:// init method instead of TCPStore
     dist.init_process_group(
-        "gloo",
-        store=store,
-        rank=rank,
-        world_size=world_size,
+        backend="gloo",
+        init_method="env://",
     )
+
 
     # os.environ['MASTER_ADDR'] = 
     # os.environ['MASTER_PORT'] = '9999'
@@ -64,11 +76,13 @@ def setup(rank, world_size):
 def cleanup():
     dist.destroy_process_group()
 
+
 def demo_basic(rank, world_size):
     print(f"Running basic DDP example on rank {rank}.")
     setup(rank, world_size)
     
-    device = torch.device(f"cuda:{rank}")
+    # device = torch.device(f"cuda:{rank}")
+    device = "cpu"
     model = ToyModel().to(device)
     ddp_model = DDP(model, device_ids=[rank])
     
