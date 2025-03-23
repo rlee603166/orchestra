@@ -1,8 +1,11 @@
+from click.types import CompositeParamType
 from flask import Flask, jsonify, render_template, jsonify, request
 from asgiref.wsgi import WsgiToAsgi
 from flask_cors import CORS
-from controller import Controller
+from controller import Controller, TinyModel
 import requests
+import torch
+import torch.nn as nn
 
 
 model_id = "toy-model"
@@ -30,10 +33,37 @@ def train():
     controller.initialize_node_weights()
     return { "status": "success" }
 
+@app.route('/compare')
+def compare():
+    """Compare model weights with a node's weights to check for consistency."""
+    local_path = controller.weights_path
+    
+    try:
+        response = requests.get(f"{controller.nodes[0]}/gradients")
+        if response.status_code != 200:
+            return jsonify({"error": f"Failed to get weights from node: HTTP {response.status_code}"}), 500
+        
+        temp_path = "temp_node_weights.pth"
+        with open(temp_path, "wb") as f:
+            f.write(response.content)
+        
+        are_equal, differences = controller.compare_models_from_files(local_path, temp_path)
+        
+        result = {
+            "equal": are_equal,
+            "differences": differences
+        }
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/gradients')
 def gradients():
     gradients = controller.get_nodes()
-    return { "count": len(gradients) }
+
+    return { "is_same": len(gradients) }
 
 asgi_app = WsgiToAsgi(app)
 
