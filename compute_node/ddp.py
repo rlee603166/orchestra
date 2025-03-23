@@ -38,11 +38,12 @@ def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = master_addr
     os.environ['MASTER_PORT'] = master_port
     
-    # init_method = f"tcp://{master_addr}:{master_port}"
+    init_method = f"tcp://{master_addr}:{master_port}?use_libuv=false"
     
     dist.init_process_group(
         backend="gloo",
-        init_method="env://?use_libuv=false",
+        # init_method="env://?use_libuv=false",
+        init_method=init_method,
         rank=rank,
         world_size=world_size
     )
