@@ -25,7 +25,7 @@ def check_connection(host, port, timeout=5):
 def setup(rank, world_size):
     # This IP should be the IP of the machine running rank 0
     master_addr = '10.17.21.244'
-    master_port = '5003'
+    master_port = '5004'
     
     os.environ['MASTER_ADDR'] = master_addr
     os.environ['MASTER_PORT'] = master_port
