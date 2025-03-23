@@ -30,6 +30,26 @@ class ToyModel(nn.Module):
         return self.net2(self.relu(self.net1(x)))
 
 def setup(rank, world_size):
+    # Use your Ethernet IP address for the master (rank 0)
+    master_addr = 'fe80::31d1:1762:14c7:9238'
+    master_port = '5003'
+
+    # Set environment variables
+    os.environ['MASTER_ADDR'] = master_addr
+    os.environ['MASTER_PORT'] = master_port
+    
+    # The simple tcp:// method works well on Windows
+    init_method = f"tcp://{master_addr}:{master_port}"
+    
+    # Initialize process group using tcp method - no TCPStore, no use_libuv
+    dist.init_process_group(
+        backend="gloo",
+        # init_method=init_method,
+        rank=rank,
+        world_size=world_size
+    )
+
+def setup1(rank, world_size):
     # master_addr = '128.151.20.130'
     # # master_addr = 'localhost'
     # master_port = '5003'
