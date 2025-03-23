@@ -30,7 +30,9 @@ class ToyModel(nn.Module):
         return self.net2(self.relu(self.net1(x)))
 
 def setup(rank, world_size):
-    master_addr = 'fe80::6315:d042:2cd1:f23e'
+    master_addr = 'fe80::48c0:7a74:81c2:91aa'
+    # master_addr = '0.0.0.0'
+    # master_addr = 'localhost'
     master_port = '5003'
 
     os.environ['MASTER_ADDR'] = master_addr
@@ -40,10 +42,29 @@ def setup(rank, world_size):
     
     dist.init_process_group(
         backend="gloo",
-        # init_method=init_method,
+        init_method="env://?use_libuv=false",
         rank=rank,
         world_size=world_size
     )
+
+# def setup(rank, world_size):
+#     # Use 127.0.0.1 for local testing
+#     # master_addr = '127.0.0.1'
+#     master_addr = 'localhost'
+#     master_port = '5003'
+    
+#     os.environ['MASTER_ADDR'] = master_addr
+#     os.environ['MASTER_PORT'] = master_port
+    
+#     # Uncomment and use init_method for explicit configuration
+#     init_method = f"tcp://{master_addr}:{master_port}"
+    
+#     dist.init_process_group(
+#         backend="gloo",
+#         init_method=init_method,
+#         rank=rank,
+#         world_size=world_size
+#     )
 
 def cleanup():
     dist.destroy_process_group()
@@ -53,10 +74,10 @@ def demo_basic(rank, world_size):
     print(f"Running basic DDP example on rank {rank}.")
     setup(rank, world_size)
     
-    # device = torch.device(f"cuda:{rank}")
-    device = "cpu"
+    device = torch.device(f"cpu")
     model = ToyModel().to(device)
-    ddp_model = DDP(model, device_ids=[rank])
+    # ddp_model = DDP(model, device_ids=[rank])
+    ddp_model = DDP(model)
     
     loss_fn = nn.MSELoss()
     optimizer = optim.SGD(ddp_model.parameters(), lr=0.001)
