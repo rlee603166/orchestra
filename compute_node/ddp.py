@@ -7,10 +7,10 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import signal
 import sys
 import os
+import time
 
 pid = os.getpid()
 print(f"The PID of the current process is: {pid}")
-
 
 def signal_handler(sig, frame):
     print("Ctrl+C pressed. Cleaning up...")
@@ -30,74 +30,90 @@ class ToyModel(nn.Module):
         return self.net2(self.relu(self.net1(x)))
 
 def setup(rank, world_size):
-    # master_addr = 'fe80::48c0:7a74:81c2:91aa'
+    # This IP should be the IP of the machine running rank 0
     master_addr = '10.17.21.244'
-    # master_addr = 'localhost'
     master_port = '5003'
-
+    
     os.environ['MASTER_ADDR'] = master_addr
     os.environ['MASTER_PORT'] = master_port
     
-    init_method = f"tcp://{master_addr}:{master_port}?use_libuv=false"
+    # Print environment for debugging
+    print(f"Rank {rank}: MASTER_ADDR={os.environ['MASTER_ADDR']}, MASTER_PORT={os.environ['MASTER_PORT']}")
     
-    dist.init_process_group(
-        backend="gloo",
-        # init_method="env://?use_libuv=false",
-        init_method=init_method,
-        rank=rank,
-        world_size=world_size
-    )
-
-# def setup(rank, world_size):
-#     # Use 127.0.0.1 for local testing
-#     # master_addr = '127.0.0.1'
-#     master_addr = 'localhost'
-#     master_port = '5003'
+    # Extended timeout for multi-machine setup (30 minutes)
+    timeout = 1800
     
-#     os.environ['MASTER_ADDR'] = master_addr
-#     os.environ['MASTER_PORT'] = master_port
-    
-#     # Uncomment and use init_method for explicit configuration
-#     init_method = f"tcp://{master_addr}:{master_port}"
-    
-#     dist.init_process_group(
-#         backend="gloo",
-#         init_method=init_method,
-#         rank=rank,
-#         world_size=world_size
-#     )
+    print(f"Rank {rank}: Initializing process group")
+    try:
+        dist.init_process_group(
+            backend="gloo",
+            init_method=f"tcp://{master_addr}:{master_port}?use_libuv=False",
+            rank=rank,
+            world_size=world_size,
+            timeout=datetime.timedelta(seconds=timeout)
+        )
+        print(f"Rank {rank}: Process group initialized successfully")
+    except Exception as e:
+        print(f"Rank {rank}: Error initializing process group: {e}")
+        raise
 
 def cleanup():
-    dist.destroy_process_group()
-
+    if dist.is_initialized():
+        print(f"Rank {dist.get_rank()}: Destroying process group")
+        dist.destroy_process_group()
 
 def demo_basic(rank, world_size):
     print(f"Running basic DDP example on rank {rank}.")
-    setup(rank, world_size)
     
-    device = torch.device(f"cpu")
-    model = ToyModel().to(device)
-    # ddp_model = DDP(model, device_ids=[rank])
-    ddp_model = DDP(model)
+    try:
+        setup(rank, world_size)
+        print(f"Rank {rank}: Setup completed")
+        
+        # Add barrier to ensure all processes are ready
+        dist.barrier()
+        print(f"Rank {rank}: Passed barrier")
+        
+        device = torch.device("cpu")
+        model = ToyModel().to(device)
+        ddp_model = DDP(model)
+        
+        loss_fn = nn.MSELoss()
+        optimizer = optim.SGD(ddp_model.parameters(), lr=0.001)
+        
+        # Small synchronization to ensure all processes have built the model
+        dist.barrier()
+        print(f"Rank {rank}: Model set up complete")
+        
+        optimizer.zero_grad()
+        inputs = torch.randn(20, 10).to(device)
+        outputs = ddp_model(inputs)
+        labels = torch.randn(20, 5).to(device)
+        loss = loss_fn(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        
+        # Final sync point
+        dist.barrier()
+        print(f"Rank {rank}: Training step complete")
+        
+    except Exception as e:
+        print(f"Rank {rank}: Error during execution: {e}")
+    finally:
+        cleanup()
     
-    loss_fn = nn.MSELoss()
-    optimizer = optim.SGD(ddp_model.parameters(), lr=0.001)
-    
-    optimizer.zero_grad()
-    outputs = ddp_model(torch.randn(20, 10).to(device))
-    labels = torch.randn(20,5).to(device)
-    loss = loss_fn(outputs, labels)
-    loss.backward()
-    optimizer.step()
-
-    cleanup()
     print(f"Finished running basic DDP example on rank {rank}.")
 
 if __name__ == "__main__":
     import argparse
+    import datetime
+    
     world_size = 2
     parser = argparse.ArgumentParser()
     parser.add_argument("--rank", type=int, required=True, help="Rank of the current process")
+    parser.add_argument("--world-size", type=int, default=2, help="Total number of processes")
     args = parser.parse_args()
-
+    
+    # Update world_size from arguments
+    world_size = args.world_size
+    
     demo_basic(args.rank, world_size)
