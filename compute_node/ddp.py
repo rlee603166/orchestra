@@ -30,8 +30,8 @@ class ToyModel(nn.Module):
         return self.net2(self.relu(self.net1(x)))
 
 def setup(rank, world_size):
-    master_addr = 'fe80::48c0:7a74:81c2:91aa'
-    # master_addr = '0.0.0.0'
+    # master_addr = 'fe80::48c0:7a74:81c2:91aa'
+    master_addr = '10.17.21.244'
     # master_addr = 'localhost'
     master_port = '5003'
 
