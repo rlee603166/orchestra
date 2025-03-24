@@ -1,9 +1,12 @@
 import unsloth
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
 from unsloth import FastLanguageModel, is_bfloat16_supported
+from torch.cuda.amp import autocast, GradScaler
 from .custom_callback import CustomCallback
+from torch.utils.data import DataLoader
 from datasets import load_dataset
 from dotenv import load_dotenv
+from torch.optim import AdamW
 from trl import SFTTrainer
 import subprocess
 import threading
@@ -16,7 +19,17 @@ load_dotenv()
 hf_token = os.getenv("HUGGINGFACE_TOKEN")
 
 class SFTService:
-    def __init__(self, model_id, device=None, log_file="training_data.json", max_iters=50, prompt_style="", train_prompt_style=""):
+    def __init__(
+        self,
+        model_id, 
+        device=None, 
+        log_file="training_data.json", 
+        max_iters=50, 
+        prompt_style="", 
+        train_prompt_style="",
+        rank=0,
+        received_weights="r1-finetuned.pth"
+    ):
         """Hyperparams"""
         self.model_id = model_id
         self.device = device if device else ("cuda" if torch.cuda.is_available() else "cpu")
@@ -25,18 +38,25 @@ class SFTService:
         self.prompt_style = prompt_style
         self.train_prompt_style = train_prompt_style
 
-        """Training State"""
-        self.stop_training = threading.Event()
-        self.training_thread = None
-        self.callback_handler = None
+        self.rank = rank
+        self.weights_path = f"compute-node-{self.rank}.pth"
+        self.received_weights = received_weights
 
+        """Training State"""
+        self.current_metrics = {
+            "step": 0,
+            "accuracy": 0.0,
+            "loss": 0.0
+        }
         """"Models and Data"""
+        self.scaler = torch.amp.GradScaler()
         self._initialize_model()
         self._initialize_data()
-        self._setup_trainer()
 
 
     def _initialize_model(self):
+        import os
+        os.environ['UNSLOTH_RETURN_LOGITS'] = '1'
         self.model, self.tokenizer = FastLanguageModel.from_pretrained(
             model_name=self.model_id,
             max_seq_length=2048,
@@ -46,6 +66,8 @@ class SFTService:
         )
         self.EOS_TOKEN = self.tokenizer.eos_token
         self._get_peft_model()
+        FastLanguageModel.for_training(self.model)
+        self.optimizer = AdamW(self.model.parameters(), lr=2e-5)
 
     def _get_peft_model(self):
         self.model = FastLanguageModel.get_peft_model(
@@ -70,22 +92,23 @@ class SFTService:
         )
 
     def _initialize_data(self):
+        shard_size = 1000
+        start_idx = (self.rank * 1000)
+        end_idx = (start_idx + 1) + shard_size
         train_dataset = load_dataset(
             "FreedomIntelligence/medical-o1-reasoning-SFT",
             "en",
-            split="train[0:500]",
+            split=f"train[{start_idx}:{end_idx}]",
             trust_remote_code=True
         )
-        
-        validation_dataset = load_dataset(
-            "FreedomIntelligence/medical-o1-reasoning-SFT",
-            "en",
-            split="train[500:600]",
-            trust_remote_code=True
-        )
-        
         self.train_dataset = train_dataset.map(self._format_prompts, batched=True)
-        self.validation_dataset = validation_dataset.map(self._format_prompts, batched=True)
+        self.train_loader = DataLoader(
+            self.train_dataset,
+            batch_size=1,
+            shuffle=True,
+            num_workers=0
+        )
+        self.train_iter = iter(self.train_loader)
 
     def _format_prompts(self, examples):
         inputs = examples["Question"]
@@ -100,74 +123,96 @@ class SFTService:
             "text": texts,
         }    
 
-    def _setup_trainer(self):
-        training_args = TrainingArguments(
-            output_dir="./r1-fine-tuned",
-            per_device_train_batch_size=2,
-            gradient_accumulation_steps=4,
-            num_train_epochs = 1, # warmup_ratio for full training runs!
-            warmup_steps=5,
-            max_steps=60,
-            learning_rate=2e-4,
-            fp16=not is_bfloat16_supported(),
-            bf16=is_bfloat16_supported(),
-            logging_steps=1,
-            save_steps=self.max_iters // 5,
-            evaluation_strategy="steps",
-            eval_steps=10,
-            optim="adamw_8bit",
-            weight_decay=0.01,
-            lr_scheduler_type="linear",
-            report_to="none",
-        )
+    # def _training_loop(self, step, batch):
+    #     torch.autograd.set_detect_anomaly(True)
+    #     inputs = self.tokenizer(
+    #         batch["text"],
+    #         return_tensors="pt",
+    #         truncation=True, 
+    #         max_length=512
+    #     ).to(self.device)
+    #     input_ids = inputs["input_ids"].clone()
+    #     attention_mask = inputs["attention_mask"].clone()
+    #     labels = input_ids.clone()        
+    #     self.model.zero_grad(set_to_none=True)
+    #     outputs = self.model(
+    #         input_ids=input_ids,
+    #         attention_mask=attention_mask,
+    #         labels=labels,
+    #         use_cache=False
+    #     )
+        
+    #     loss = outputs.loss
+    #     loss.backward()
+        
+    #     with torch.no_grad():
+    #         logits = outputs.logits.detach()
+    #         predictions = torch.argmax(logits, dim=-1)
+    #         mask = labels != -100
+    #         correct = (predictions == labels) & mask
+    #         accuracy = correct.sum().item() / mask.sum().item()
+        
+    #     self.current_metrics["step"] = step
+    #     self.current_metrics["loss"] = loss.item()
+    #     self.current_metrics["accuracy"] = accuracy
 
-        self.trainer = SFTTrainer(
-            model=self.model,
-            tokenizer=self.tokenizer,
-            train_dataset=self.train_dataset,
-            eval_dataset=self.validation_dataset,
-            dataset_text_field="text",
-            max_seq_length=512,
-            dataset_num_proc=1,
-            args=training_args,
-            packing=True,
-        )
+    def _training_loop(self, step, batch):
+        batch = self._get_batch()
+        inputs = self.tokenizer(
+            batch["text"],
+            return_tensors="pt",
+            padding=True,
+            truncation=True, 
+            max_length=512
+        ).to(self.device)
+        labels = inputs["input_ids"].clone()
+        self.optimizer.zero_grad()
 
-        self.callback_handler = CustomCallback(log_file=self.log_file, stop_event=self.start_training)
-        self.trainer.add_callback(self.callback_handler)
-
-    def _training_loop(self):
+        with torch.amp.autocast(self.device, dtype=torch.bfloat16):
+            outputs = self.model(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                labels=labels,
+                use_cache=False
+            )
+            loss = outputs.loss
+            
+        self.scaler.scale(loss).backward()
+        self.scaler.unscale_(self.optimizer)
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+        with torch.no_grad():
+            logits = outputs.logits.detach()
+            predictions = torch.argmax(logits, dim=-1)
+            mask = labels != -100
+            correct = (predictions == labels) & mask
+            accuracy = correct.sum().item() / mask.sum().item()
+        self.current_metrics["step"] = step
+        self.current_metrics["loss"] = loss.item()
+        self.current_metrics["accuracy"] = accuracy
+         
+    def _get_batch(self):
         try:
-            torch.cuda.empty_cache()
-               
-            self.trainer.train()
-        except Exception as e:
-            if self.stop_training.is_set():
-                print("Training was manually stopped")
-            else:
-                print(f"Training error: {e}")
-        finally:
-            torch.cuda.empty_cache()
-            print("Training thread terminated and CUDA memory cleaned")
+            batch = next(self.train_iter)
+        except StopIteration:
+            self.train_iter = iter(self.train_loader)
+            batch = next(self.train_iter)
+        return batch
 
-    def start_training(self, new_loop=True):
-        """Start training on a seperate thread"""
-        if self.training_thread and self.training_thread.is_alive():
-            self.stop_training.set()
-            self.training_thread.join(timeout=5)
-            torch.cuda.empty_cache()
-        
-        self.stop_training.clear()
+    def _load_received_weights(self):
+        self.model.load_state_dict(torch.load(self.weights_path, map_location=self.device))
 
-        if new_loop:
-            self.trainer.remove_callback(self.callback_handler)
-            self.callback_handler = CustomCallback(log_file=self.log_file, stop_event=self.stop_training)
-            self.trainer.add_callback(self.callback_handler)
+    def _save_and_clean_weights(self):
+        torch.save({n: p.grad.clone() for n, p in self.model.parameters()}, self.weights_path)
+        os.remove(self.received_weights)
 
-        self.training_thread = threading.Thread(target=self._training_loop, daemon=True)
-        self.training_thread.start()
-        
-        return { "status": "success" }
+    def train(self, step):
+        # self._load_received_weights()
+        batch = self._get_batch()
+        self._training_loop(step, batch)
+        # self._save_and_clean_weights()
+        return self.current_metrics
 
     def stop(self):
         """Stop training"""
