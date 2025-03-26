@@ -1,4 +1,6 @@
 import io
+import json
+import time
 import torch
 import requests
 from concurrent.futures import ThreadPoolExecutor
@@ -22,12 +24,16 @@ class TinyModel(torch.nn.Module):
 
 
 class Controller:
-    def __init__(self, model_id=""):
+    def __init__(self, model_id="", max_iters=100, training_log="training_log.json"):
         self.model_id = model_id
         self.weights_path = f"finetuned-{self.model_id}.pth"
         # self.nodes = ["http://localhost:5001", "http://localhost:5002"]
-        self.nodes = ["http://0.0.0.0:5001"]
-        self.metrics = { "loss": 0.0, "step": 0 }
+        self.nodes = ["http://0.0.0.0:5000"]
+        self.metrics = { "step": [], "loss": [], "accuracy": [] }
+        self.step = 0
+
+        self.max_iters = max_iters
+        self.training_log = training_log
 
         self._initialize_model()
 
@@ -39,14 +45,21 @@ class Controller:
         torch.save(self.model, self.weights_path)
 
     def _send_weights(self, url):
-        # requests.get(url)
-        with open(self.weights_path, "rb") as w:
-            weights={ "weights": w }
-            steps={ "step": self.metrics["step"] }
-            requests.post(f"{url}/train", files=weights, data=steps)
+        try:
+            with open(self.weights_path, "rb") as w:
+                files = {
+                    "weights": (self.weights_path, w, "application/octet-stream")
+                }
+                data = {"step": str(self.step)}
+                
+                training_result = requests.post(f"{url}/train", files=files, data=data)
+                return training_result
+        except requests.exceptions.ConnectionError as e:
+            return { "error": f"Connection error: {e}" }
+        except Exception as e:
+            return { "error": f"Error in training: {e}" }
 
     def initialize_node_weights(self):
-        print(self.nodes)
         with ThreadPoolExecutor() as executor:
             executor.map(lambda n: self._send_weights(n), self.nodes)
 
@@ -71,8 +84,50 @@ class Controller:
                     
         return gradients
 
-    def train_nodes(self):
-        pass
+    def _train_nodes(self):
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(self._send_weights, n) for n in self.nodes]
+            node_loss = 0
+            node_accuracy = 0
+
+            for future in futures:
+                try:
+                    response = future.result(timeout=5)
+                    response = response.content.decode('utf-8')  
+                    response = json.loads(response)
+                    if response is not None:
+                        node_loss+=response["metrics"]["loss"]
+                        node_accuracy+=response["metrics"]["accuracy"]
+                except requests.exceptions.ConnectionError as e:
+                    return { "error": f"Connection error: {e}" }
+                except Exception as e:
+                    return { "error": f"Error in training: {e}" }
+
+        self.metrics["accuracy"].append(node_accuracy / len(self.nodes))
+        self.metrics["loss"].append(node_loss / len(self.nodes))                
+        self.metrics["step"].append(self.step)
+
+    def _update_stats(self):
+        with open(self.training_log, "w") as f:
+            print(self.metrics)
+            json.dump(self.metrics, f)
+
+    def _reset_stats(self):
+        with open(self.training_log, "w") as f:
+            self.metrics = { "step": [], "loss": [], "accuracy": [] } 
+            json.dump(self.metrics, f)
+
+    def train_loop(self):
+        self._reset_stats()
+        while self.step <= self.max_iters:
+            self._train_nodes()
+            self._update_stats()
+            self.step+=1
+            time.sleep(2)
+
+    def get_training_data(self):
+        with open(self.training_log, "r") as f:
+            return json.load(f)
 
     def compare_models_from_files(self, file1_path, file2_path, rtol=1e-5, atol=1e-8, verbose=True):
         try:

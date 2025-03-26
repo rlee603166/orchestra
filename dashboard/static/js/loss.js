@@ -113,19 +113,21 @@ const accChart = new Chart(accCtx, {
 let updateInterval;
 let isTraining = false;
 
+const mainNodeURL = "http://0.0.0.0:8081";
+
 function updateChart() {
     console.log("fetching");
-    fetch("http://128.151.20.178:5000/training_data")
+    fetch(`${mainNodeURL}/training_data`)
         .then(response => response.json())
         .then(data => {
-            console.log(data, null, 2);
+            console.log(JSON.stringify(data, null, 2));
             // Update loss chart
-            lossChart.data.labels = data.iterations;
+            lossChart.data.labels = data.step;
             lossChart.data.datasets[0].data = data.loss;
             lossChart.update();
 
             // Update accuracy chart
-            accChart.data.labels = data.iterations;
+            accChart.data.labels = data.step;
             accChart.data.datasets[0].data = data.accuracy;
             accChart.update();
 
@@ -149,7 +151,7 @@ function stopUpdate() {
 function startTraining() {
     if (isTraining) return;
 
-    fetch("http://128.151.20.178:5000/train", {
+    fetch(`${mainNodeURL}/train`, {
         method: "POST",
     })
         .then(response => {

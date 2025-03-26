@@ -3,6 +3,7 @@ from flask import Flask, jsonify, render_template, jsonify, request
 from asgiref.wsgi import WsgiToAsgi
 from flask_cors import CORS
 from controller import Controller, TinyModel
+import threading
 import requests
 import torch
 import torch.nn as nn
@@ -30,8 +31,13 @@ def ping():
 
 @app.route('/train', methods=["POST"])
 def train():
-    controller.initialize_node_weights()
+    thread = threading.Thread(target=controller.train_loop)
+    thread.start()
     return { "status": "success" }
+
+@app.route('/training_data')
+def data():
+    return controller.get_training_data()
 
 @app.route('/compare')
 def compare():
@@ -62,7 +68,6 @@ def compare():
 @app.route('/gradients')
 def gradients():
     gradients = controller.get_nodes()
-
     return { "is_same": len(gradients) }
 
 asgi_app = WsgiToAsgi(app)
