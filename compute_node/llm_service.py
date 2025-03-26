@@ -2,7 +2,6 @@ import unsloth
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
 from unsloth import FastLanguageModel, is_bfloat16_supported
 from torch.cuda.amp import autocast, GradScaler
-from .custom_callback import CustomCallback
 from torch.utils.data import DataLoader
 from datasets import load_dataset
 from dotenv import load_dotenv
@@ -18,7 +17,7 @@ load_dotenv()
 
 hf_token = os.getenv("HUGGINGFACE_TOKEN")
 
-class SFTService:
+class LLMService:
     def __init__(
         self,
         model_id, 
@@ -40,7 +39,7 @@ class SFTService:
 
         self.rank = rank
         self.weights_path = f"compute-node-{self.rank}.pth"
-        self.received_weights = received_weights
+        self.received_weights = "controller_weights.pth"
 
         """Training State"""
         self.current_metrics = {
@@ -201,17 +200,18 @@ class SFTService:
         return batch
 
     def _load_received_weights(self):
-        self.model.load_state_dict(torch.load(self.weights_path, map_location=self.device))
+        loaded_weights = torch.load(self.received_weights, map_location=self.device)
+        self.model.load_state_dict(loaded_weights, strict=False)
 
     def _save_and_clean_weights(self):
-        torch.save({n: p.grad.clone() for n, p in self.model.parameters()}, self.weights_path)
+        torch.save(self.model.state_dict(), self.weights_path)
         os.remove(self.received_weights)
 
     def train(self, step):
-        # self._load_received_weights()
+        self._load_received_weights()
         batch = self._get_batch()
         self._training_loop(step, batch)
-        # self._save_and_clean_weights()
+        self._save_and_clean_weights()
         return self.current_metrics
 
     def stop(self):

@@ -113,7 +113,7 @@ const accChart = new Chart(accCtx, {
 let updateInterval;
 let isTraining = false;
 
-const mainNodeURL = "http://0.0.0.0:8081";
+const mainNodeURL = "http://128.151.20.95:8081";
 
 function updateChart() {
     console.log("fetching");
@@ -140,7 +140,7 @@ function updateChart() {
 }
 
 function startUpdate() {
-    updateInterval = setInterval(updateChart, 5000);
+    updateInterval = setInterval(updateChart, 1000);
 }
 
 function stopUpdate() {
@@ -180,7 +180,7 @@ function startTraining() {
 function stopTraining() {
     if (!isTraining) return;
 
-    fetch("http://128.151.20.178:5000/stop", {
+    fetch(`${mainNodeURL}:5000/stop`, {
         method: "POST",
     })
         .then(response => {

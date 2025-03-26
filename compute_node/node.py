@@ -1,14 +1,14 @@
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Form, File, UploadFile, HTTPException
 from prompts import prompt_style, train_prompt_style
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from llm_service import LLMService
 from pydantic import BaseModel
-from fastapi import FastAPI, Form, File, UploadFile, HTTPException
-from services import SFTService
 from typing import Annotated
 import requests
-import torch
-import atexit
 import signal
+import atexit
+import torch
 import sys
 import os
 
@@ -36,7 +36,7 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-service = SFTService(
+service = LLMService(
     model_id=MODEL_NAME,
     device=DEVICE,
     max_iters=MAX_ITERS,
@@ -85,8 +85,12 @@ def hello():
 # }
 @app.post("/train")
 async def train(
+    weights: Annotated[UploadFile, File()],
     step: Annotated[int, Form()]
 ):
+    with open(service.received_weights, "wb") as f:
+        content = await weights.read()
+        f.write(content)
     metrics = service.train(step)
     return { "status": "train", "metrics": metrics }
 

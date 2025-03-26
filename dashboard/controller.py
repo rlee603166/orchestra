@@ -28,7 +28,7 @@ class Controller:
         self.model_id = model_id
         self.weights_path = f"finetuned-{self.model_id}.pth"
         # self.nodes = ["http://localhost:5001", "http://localhost:5002"]
-        self.nodes = ["http://0.0.0.0:5000"]
+        self.nodes = ["http://128.151.20.95:5000"]
         self.metrics = { "step": [], "loss": [], "accuracy": [] }
         self.step = 0
 
@@ -93,6 +93,7 @@ class Controller:
             for future in futures:
                 try:
                     response = future.result(timeout=5)
+                    print(response)
                     response = response.content.decode('utf-8')  
                     response = json.loads(response)
                     if response is not None:
@@ -109,7 +110,6 @@ class Controller:
 
     def _update_stats(self):
         with open(self.training_log, "w") as f:
-            print(self.metrics)
             json.dump(self.metrics, f)
 
     def _reset_stats(self):
