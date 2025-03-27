@@ -11,6 +11,16 @@ import atexit
 import torch
 import sys
 import os
+import argparse
+
+
+"""Parse command line arguments"""
+parser = argparse.ArgumentParser(description='FastAPI compute node with rank support')
+parser.add_argument('--rank', type=int, default=0, help='Node rank for distributed training')
+parser.add_argument('--world-size', type=int, default=1, help='Total number of nodes')
+parser.add_argument('--port', type=int, default=5000, help='Port to run the server on')
+args = parser.parse_args()
+print(f"Starting server with rank {args.rank}")
 
 
 """Hyperparameters"""
@@ -42,7 +52,8 @@ service = LLMService(
     max_iters=MAX_ITERS,
     log_file=LOG_FILE,
     prompt_style=prompt_style,
-    train_prompt_style=train_prompt_style
+    train_prompt_style=train_prompt_style,
+    rank=args.rank
 )
 
 def cleanup_resources():

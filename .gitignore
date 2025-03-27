@@ -15,6 +15,7 @@ compute_node/r1-fine-tuned
 *.so
 
 *.pth
+*.safetensors
 
 node_modules
 
