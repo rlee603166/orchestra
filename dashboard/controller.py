@@ -83,7 +83,7 @@ class Controller:
         
     def _initialize_weights(self):
         import os
-        save_dir = os.path.join(os.path.expanduser("~"), "\orchestra\dashboard\model_weights")
+        save_dir = os.path.join(os.path.expanduser("~"), "orchestra/dashboard/model_weights")
         os.makedirs(save_dir, exist_ok=True)
         
         self.weights_path = os.path.join(save_dir, "finetuned-DeepSeek-R1-Distill-Llama-8B.pth")
@@ -109,13 +109,15 @@ class Controller:
                 }
                 data = {"step": str(self.step)}
 
-                print("sending weights")
+                print(f"Sending weights to {url}")
                 training_result = requests.post(f"{url}/train", files=files, data=data)
-                print(training_result)
+                print(f"Response status: {training_result.status_code}")
                 return training_result
         except requests.exceptions.ConnectionError as e:
+            print(f"Connection error sending weights to {url}: {e}")
             return { "error": f"Connection error: {e}" }
         except Exception as e:
+            print(f"Error sending weights to {url}: {e}")
             return { "error": f"Error in training: {e}" }
 
     def initialize_node_weights(self):
@@ -124,84 +126,136 @@ class Controller:
 
     def get_nodes(self):
         print(f"Attempting to get gradients from nodes: {self.nodes}")
-        gradients = []
+        gradients_dict = {}
+        nodes_responded = 0
+        
         with ThreadPoolExecutor() as executor:
             futures = [executor.submit(requests.get, f"{n}/gradients") for n in self.nodes]
             
             for i, future in enumerate(futures):
                 try:
                     print(f"Waiting for response from node {self.nodes[i]}")
-                    response = future.result(timeout=5)
+                    response = future.result(timeout=15)  # Increased timeout
                     print(f"Received response from {self.nodes[i]}: {response.status_code}")
+                    
                     if response.status_code == 200:
                         print(f"Content length: {len(response.content)} bytes")
-                        gradient = torch.load(io.BytesIO(response.content), weights_only=False)
-                        gradients.append(gradient)
-                        print(f"Successfully loaded gradient from {self.nodes[i]}")
+                        
+                        try:
+                            node_gradients = torch.load(io.BytesIO(response.content), map_location="cpu")
+                            print(f"Successfully loaded gradients from {self.nodes[i]}")
+                            
+                            if not gradients_dict:
+                                for name, grad in node_gradients:
+                                    gradients_dict[name] = grad.clone()
+                            else:
+                                for name, grad in node_gradients:
+                                    if name in gradients_dict:
+                                        gradients_dict[name] += grad
+                            
+                            nodes_responded += 1
+                        except Exception as e:
+                            print(f"Error loading gradients from {self.nodes[i]}: {e}")
+                            import traceback
+                            traceback.print_exc()
                     else:
                         print(f"Failed to get gradients from {self.nodes[i]}: HTTP {response.status_code}")
-                        print(f"Response content: {response.text[:200]}...")
+                        if hasattr(response, 'text') and response.text:
+                            print(f"Response content: {response.text[:200]}...")
                 except requests.exceptions.ConnectionError as e:
                     print(f"Connection error to {self.nodes[i]}: {e}")
                 except Exception as e:
                     print(f"Error retrieving gradients from {self.nodes[i]}: {e}")
+                    import traceback
+                    traceback.print_exc()
         
-        if not gradients:
+        if nodes_responded == 0:
             print("No gradients were retrieved from any nodes")
             return {"status": "failed", "reason": "no gradients retrieved"}
         
-        print(f"Successfully retrieved {len(gradients)} gradients")
-        stacked = torch.stack(gradients)
-        average_gradients = torch.mean(stacked, dim=0)
-        torch.save(average_gradients, self.weights_path)
-        return {"status": "averaged weights successfully"}
+        print(f"Successfully retrieved gradients from {nodes_responded} nodes")
+        for name in gradients_dict:
+            gradients_dict[name] /= nodes_responded
+        print("Applying averaged gradients to the model...")
+        current_state = self.model.state_dict()
+        if not hasattr(self, 'optimizer') or self.optimizer is None:
+            self.optimizer = AdamW(self.model.parameters(), lr=2e-5)
+        
+        for name, param in self.model.named_parameters():
+            if param.requires_grad and name in gradients_dict:
+                with torch.no_grad():
+                    lr = 2e-5
+                    for param_group in self.optimizer.param_groups:
+                        lr = param_group['lr']
+                        break
+                    param.data.add_(gradients_dict[name], alpha=-lr)
+        
+        torch.save(self.model.state_dict(), self.weights_path)
+        print(f"Saved updated model weights to {self.weights_path}")
+        
+        return {"status": "averaged weights and updated model successfully"}
 
     def _train_nodes(self):
-        print("fetching nodes")
+        print("Training nodes...")
         with ThreadPoolExecutor() as executor:
             futures = [executor.submit(self._send_weights, n) for n in self.nodes]
             node_loss = 0
             node_accuracy = 0
+            nodes_responded = 0
 
             for future in futures:
                 try:
-                    response = future.result(timeout=5)
-                    response = response.content.decode('utf-8')  
-                    response = json.loads(response)
-                    print(response)
-                    if response is not None:
-                        node_loss+=response["metrics"]["loss"]
-                        node_accuracy+=response["metrics"]["accuracy"]
+                    response = future.result(timeout=15)  # Increased timeout
+                    response_text = response.content.decode('utf-8')  
+                    response_data = json.loads(response_text)
+                    print(f"Training response: {response_data}")
+                    
+                    if response_data and "metrics" in response_data:
+                        node_loss += response_data["metrics"]["loss"]
+                        node_accuracy += response_data["metrics"]["accuracy"]
+                        nodes_responded += 1
                 except requests.exceptions.ConnectionError as e:
-                    return { "error": f"Connection error: {e}" }
+                    print(f"Connection error during training: {e}")
                 except Exception as e:
-                    return { "error": f"Error in training: {e}" }
-
-        self.metrics["accuracy"].append(node_accuracy / len(self.nodes))
-        self.metrics["loss"].append(node_loss / len(self.nodes))                
-        self.metrics["step"].append(self.step)
+                    print(f"Error in training: {e}")
+                    import traceback
+                    traceback.print_exc()
+        
+        if nodes_responded > 0:
+            self.metrics["accuracy"].append(node_accuracy / nodes_responded)
+            self.metrics["loss"].append(node_loss / nodes_responded)                
+            self.metrics["step"].append(self.step)
+            print(f"Updated metrics at step {self.step}: loss={node_loss/nodes_responded}, accuracy={node_accuracy/nodes_responded}")
+        else:
+            print("No nodes responded during training")
 
     def _update_stats(self):
         with open(self.training_log, "w") as f:
             json.dump(self.metrics, f)
+        print(f"Updated statistics in {self.training_log}")
 
     def _reset_stats(self):
         with open(self.training_log, "w") as f:
             self.metrics = { "step": [], "loss": [], "accuracy": [] } 
             json.dump(self.metrics, f)
+        print("Reset training statistics")
 
     def train_loop(self, stop_training):
         self._reset_stats()
         while self.step <= self.max_iters and not stop_training.is_set():
-            print(f"starting step: {self.step}")
+            print(f"Starting training step: {self.step}")
             self._train_nodes()
-            print("updating stats")
+            print("Updating stats...")
             self._update_stats()
+            
+            print("Collecting and averaging gradients...")
             start = time.time()
-            self.get_nodes()
+            result = self.get_nodes()
             end = time.time()
-            print(f"gradient averaging time: {end-start}")
-            self.step+=1
+            print(f"Gradient averaging completed in {end-start:.2f} seconds. Result: {result}")
+            
+            self.step += 1
+            print(f"Completed step {self.step-1}")
 
     def get_training_data(self):
         with open(self.training_log, "r") as f:
@@ -221,8 +275,51 @@ class Controller:
                 print(f"Models are of different types: {type(model1)} vs {type(model2)}")
             return False
         
-        state_dict1 = model1.state_dict()
-        state_dict2 = model2.state_dict()
+        # Handle the case where we might be comparing gradients dictionaries
+        if isinstance(model1, dict) and isinstance(model2, dict):
+            keys1 = set(model1.keys())
+            keys2 = set(model2.keys())
+            
+            if keys1 != keys2:
+                if verbose:
+                    print("Models have different parameter names:")
+                    print(f"Only in model1: {keys1 - keys2}")
+                    print(f"Only in model2: {keys2 - keys1}")
+                return False
+            
+            all_equal = True
+            differences = {}
+            
+            for key in keys1:
+                tensor1 = model1[key]
+                tensor2 = model2[key]
+                
+                if tensor1.shape != tensor2.shape:
+                    if verbose:
+                        print(f"Shape mismatch for {key}: {tensor1.shape} vs {tensor2.shape}")
+                    differences[key] = {"error": "shape_mismatch", "shapes": [list(tensor1.shape), list(tensor2.shape)]}
+                    all_equal = False
+                    continue
+                
+                is_close = torch.allclose(tensor1, tensor2, rtol=rtol, atol=atol)
+                
+                if not is_close:
+                    abs_diff = (tensor1 - tensor2).abs()
+                    max_diff = abs_diff.max().item()
+                    max_diff_idx = torch.where(abs_diff == max_diff)
+                    if verbose:
+                        print(f"Values differ for {key}. Max difference: {max_diff} at index {max_diff_idx}")
+                    differences[key] = {"error": "value_mismatch", "max_diff": max_diff}
+                    all_equal = False
+            
+            if all_equal and verbose:
+                print("All model weights are equal within specified tolerance.")
+            
+            return all_equal, differences if not all_equal else None
+            
+        # Handle traditional state_dict models
+        state_dict1 = model1.state_dict() if hasattr(model1, 'state_dict') else model1
+        state_dict2 = model2.state_dict() if hasattr(model2, 'state_dict') else model2
         
         keys1 = set(state_dict1.keys())
         keys2 = set(state_dict2.keys())

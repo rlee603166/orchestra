@@ -122,39 +122,6 @@ class LLMService:
             "text": texts,
         }    
 
-    # def _training_loop(self, step, batch):
-    #     torch.autograd.set_detect_anomaly(True)
-    #     inputs = self.tokenizer(
-    #         batch["text"],
-    #         return_tensors="pt",
-    #         truncation=True, 
-    #         max_length=512
-    #     ).to(self.device)
-    #     input_ids = inputs["input_ids"].clone()
-    #     attention_mask = inputs["attention_mask"].clone()
-    #     labels = input_ids.clone()        
-    #     self.model.zero_grad(set_to_none=True)
-    #     outputs = self.model(
-    #         input_ids=input_ids,
-    #         attention_mask=attention_mask,
-    #         labels=labels,
-    #         use_cache=False
-    #     )
-        
-    #     loss = outputs.loss
-    #     loss.backward()
-        
-    #     with torch.no_grad():
-    #         logits = outputs.logits.detach()
-    #         predictions = torch.argmax(logits, dim=-1)
-    #         mask = labels != -100
-    #         correct = (predictions == labels) & mask
-    #         accuracy = correct.sum().item() / mask.sum().item()
-        
-    #     self.current_metrics["step"] = step
-    #     self.current_metrics["loss"] = loss.item()
-    #     self.current_metrics["accuracy"] = accuracy
-
     def _training_loop(self, step, batch):
         batch = self._get_batch()
         inputs = self.tokenizer(
@@ -200,12 +167,32 @@ class LLMService:
         return batch
 
     def _load_received_weights(self):
-        loaded_weights = torch.load(self.received_weights, map_location=self.device)
-        self.model.load_state_dict(loaded_weights, strict=False)
+        if os.path.exists(self.received_weights):
+            print(f"Loading weights from {self.received_weights}")
+            loaded_weights = torch.load(self.received_weights, map_location=self.device)
+            self.model.load_state_dict(loaded_weights, strict=False)
+        else:
+            print(f"Warning: {self.received_weights} not found, using current weights")
+
+    def _extract_gradients(self):
+        """Extract only the gradients from the model for efficient transfer"""
+        gradients = []
+        for name, param in self.model.named_parameters():
+            if param.requires_grad and param.grad is not None:
+                # Clone and detach to avoid modifying the original gradients
+                gradients.append((name, param.grad.clone().detach().cpu()))
+        return gradients
 
     def _save_and_clean_weights(self):
-        torch.save(self.model.state_dict(), self.weights_path)
-        os.remove(self.received_weights)
+        """Save only the gradients instead of the full model state"""
+        print(f"Extracting and saving gradients to {self.weights_path}")
+        gradients = self._extract_gradients()
+        torch.save(gradients, self.weights_path)
+        
+        # Clean up received weights file if it exists
+        if os.path.exists(self.received_weights):
+            print(f"Removing {self.received_weights}")
+            os.remove(self.received_weights)
 
     def train(self, step):
         self._load_received_weights()
@@ -216,11 +203,14 @@ class LLMService:
 
     def stop(self):
         """Stop training"""
-        self.stop_training.set()
-        print("Stop training requested - waiting for training loop to terminate...")
-        
-        if self.training_thread and self.training_thread.is_alive():
-            self.training_thread.join(timeout=5)
+        if hasattr(self, 'stop_training') and hasattr(self, 'training_thread'):
+            self.stop_training.set()
+            print("Stop training requested - waiting for training loop to terminate...")
+            
+            if self.training_thread and self.training_thread.is_alive():
+                self.training_thread.join(timeout=5)
+        else:
+            print("No active training thread to stop")
             
         return { 
             "status": "stopped", 
@@ -291,7 +281,9 @@ class LLMService:
             return json.load(f)
  
     def get_current_training_state(self):
-        return self.callback_handler.get_current_stats()
+        if hasattr(self, 'callback_handler'):
+            return self.callback_handler.get_current_stats()
+        return self.current_metrics
 
     def run_inference(self, prompt):
         """Run inference with the model"""
@@ -312,9 +304,10 @@ class LLMService:
         before_allocated = torch.cuda.memory_allocated(0) / 1024**3
         before_reserved = torch.cuda.memory_reserved(0) / 1024**3
         
-        self.stop_training.set()
-        if self.training_thread and self.training_thread.is_alive():
-            self.training_thread.join(timeout=5)
+        if hasattr(self, 'stop_training') and hasattr(self, 'training_thread'):
+            self.stop_training.set()
+            if self.training_thread and self.training_thread.is_alive():
+                self.training_thread.join(timeout=5)
         
         print("Moving model to CPU to free GPU memory...")
         model_state = self.model.state_dict()
@@ -345,11 +338,12 @@ class LLMService:
         """Clean up any resources before application exit"""
         print("Cleaning up resources...")
         
-        self.stop_training.set()
-        
-        if self.training_thread and self.training_thread.is_alive():
-            print("Waiting for training thread to terminate...")
-            self.training_thread.join(timeout=5)
+        if hasattr(self, 'stop_training'):
+            self.stop_training.set()
+            
+            if hasattr(self, 'training_thread') and self.training_thread and self.training_thread.is_alive():
+                print("Waiting for training thread to terminate...")
+                self.training_thread.join(timeout=5)
         
         torch.cuda.empty_cache()
         print("Resources cleaned up")
