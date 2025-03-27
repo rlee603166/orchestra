@@ -3,7 +3,9 @@ import json
 import time
 import torch
 import requests
+from torch.optim import AdamW
 from concurrent.futures import ThreadPoolExecutor
+from unsloth import FastLanguageModel, is_bfloat16_supported
 
 class TinyModel(torch.nn.Module):
 
@@ -26,7 +28,7 @@ class TinyModel(torch.nn.Module):
 class Controller:
     def __init__(self, model_id="", max_iters=100, training_log="training_log.json"):
         self.model_id = model_id
-        self.weights_path = f"finetuned-{self.model_id}.pth"
+        self.weights_path = f"finetuned-DeepSeek-R1-Distill-Llama-8B.pth"
         # self.nodes = ["http://localhost:5001", "http://localhost:5002"]
         self.nodes = [
             "http://128.151.20.130:5000",
@@ -43,11 +45,61 @@ class Controller:
         self._initialize_model()
 
     def _initialize_model(self):
-        self.model = TinyModel()
-        self._save_weights()
+        import os
+        os.environ['UNSLOTH_RETURN_LOGITS'] = '1'
+        self.model, self.tokenizer = FastLanguageModel.from_pretrained(
+            model_name=self.model_id,
+            max_seq_length=2048,
+            dtype=None,
+            load_in_4bit=True,
+        )
+        self.EOS_TOKEN = self.tokenizer.eos_token
+        self._get_peft_model()
+        FastLanguageModel.for_training(self.model)
+        self.optimizer = AdamW(self.model.parameters(), lr=2e-5)
+
+    def _get_peft_model(self):
+        self.model = FastLanguageModel.get_peft_model(
+            self.model,
+            r=16,
+            target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+            lora_alpha=16,
+            lora_dropout=0,  
+            bias="none",  
+            use_gradient_checkpointing="unsloth",
+            random_state=3407,
+            use_rslora=False,  
+            loftq_config=None,
+        )
+        self._initialize_weights()
         
+    def _initialize_weights(self):
+        import os
+        save_dir = os.path.join(os.path.expanduser("~"), "model_weights")
+        os.makedirs(save_dir, exist_ok=True)
+        
+        self.weights_path = os.path.join(save_dir, "finetuned-DeepSeek-R1-Distill-Llama-8B.pth")
+        
+        model_save_dir = os.path.join(save_dir, "model")
+        os.makedirs(model_save_dir, exist_ok=True)
+        self.model.save_pretrained(model_save_dir)
+        torch.save(self.model.state_dict(), self.weights_path)
+        print(f"Model weights initialized and saved to {self.weights_path}")
+
     def _save_weights(self):
-        torch.save(self.model, self.weights_path)
+        import os
+        save_dir = os.path.join(os.path.expanduser("~"), "model_weights")
+        os.makedirs(save_dir, exist_ok=True)
+        torch.save(self.model.state_dict(), self.weights_path)
+        print(f"Model weights saved to {self.weights_path}")
 
     def _send_weights(self, url):
         try:
@@ -56,7 +108,8 @@ class Controller:
                     "weights": (self.weights_path, w, "application/octet-stream")
                 }
                 data = {"step": str(self.step)}
-                
+
+                print(url)
                 training_result = requests.post(f"{url}/train", files=files, data=data)
                 return training_result
         except requests.exceptions.ConnectionError as e:

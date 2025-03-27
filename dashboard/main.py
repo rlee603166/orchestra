@@ -7,8 +7,8 @@ import threading
 import requests
 
 
-model_id = "toy-model"
-controller = Controller(model_id)
+model_id = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+controller = Controller(model_id=model_id)
 
 app = Flask(__name__)
 CORS(app)
