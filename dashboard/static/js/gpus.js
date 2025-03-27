@@ -2,7 +2,8 @@ document.addEventListener("DOMContentLoaded", function () {
     let gpuData = [];
     const urls = [
         "http://128.151.20.95:5000",
-        "http://128.151.20.120:5000"
+        "http://128.151.20.120:5000",
+        "http://128.151.20.147:5000"
     ];
 
     function renderGPUNodes() {

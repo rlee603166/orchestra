@@ -28,7 +28,7 @@ class Controller:
         self.model_id = model_id
         self.weights_path = f"finetuned-{self.model_id}.pth"
         # self.nodes = ["http://localhost:5001", "http://localhost:5002"]
-        self.nodes = ["http://128.151.20.130:5000", "128.151.20.120:5000"]
+        self.nodes = ["http://128.151.20.130:5000", "128.151.20.120:5000", "128.151.20.147"]
         self.metrics = { "step": [], "loss": [], "accuracy": [] }
         self.step = 0
 
