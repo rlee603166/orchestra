@@ -79,8 +79,12 @@ async def train(
 
 @app.get("/gradients")
 def gradients():
+    print(f"Checking for weights at: {service.weights_path}")
     if not os.path.exists(service.weights_path):
+        print(f"File not found: {service.weights_path}")
         raise HTTPException(status_code=404, detail="Gradients not found")
+    file_size = os.path.getsize(service.weights_path)
+    print(f"Found weights file, size: {file_size} bytes")
     return FileResponse(service.weights_path)
 
 @app.post("/stop")
