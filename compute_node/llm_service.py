@@ -103,7 +103,7 @@ class LLMService:
         self.train_dataset = train_dataset.map(self._format_prompts, batched=True)
         self.train_loader = DataLoader(
             self.train_dataset,
-            batch_size=1,
+            batch_size=10,
             shuffle=True,
             num_workers=0
         )

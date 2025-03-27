@@ -144,7 +144,6 @@ class Controller:
                         try:
                             node_gradients = torch.load(io.BytesIO(response.content), map_location="cpu")
                             print(f"Successfully loaded gradients from {self.nodes[i]}")
-                            
                             if not gradients_dict:
                                 for name, grad in node_gradients:
                                     gradients_dict[name] = grad.clone()
@@ -176,19 +175,37 @@ class Controller:
         print(f"Successfully retrieved gradients from {nodes_responded} nodes")
         for name in gradients_dict:
             gradients_dict[name] /= nodes_responded
+        
+        gradient_names = set(gradients_dict.keys())
         print("Applying averaged gradients to the model...")
-        current_state = self.model.state_dict()
         if not hasattr(self, 'optimizer') or self.optimizer is None:
             self.optimizer = AdamW(self.model.parameters(), lr=2e-5)
         
+        lr = 2e-5  # Default if not available from optimizer
+        for param_group in self.optimizer.param_groups:
+            lr = param_group['lr']
+            break
+        
+        total_params = 0
+        updated_params = 0
+        missing_gradients = []
+        
         for name, param in self.model.named_parameters():
-            if param.requires_grad and name in gradients_dict:
-                with torch.no_grad():
-                    lr = 2e-5
-                    for param_group in self.optimizer.param_groups:
-                        lr = param_group['lr']
-                        break
-                    param.data.add_(gradients_dict[name], alpha=-lr)
+            total_params += 1
+            if param.requires_grad:
+                if name in gradients_dict:
+                    updated_params += 1
+                    param_device = param.device
+                    gradient = gradients_dict[name].to(param_device)
+                    with torch.no_grad():
+                        param.data.add_(gradient, alpha=-lr)
+                else:
+                    missing_gradients.append(name)
+        
+        print(f"Model has {total_params} parameters, updated {updated_params}")
+        if missing_gradients:
+            print(f"Missing gradients for {len(missing_gradients)} parameters")
+            print(f"Some missing gradients: {missing_gradients[:5]}")
         
         torch.save(self.model.state_dict(), self.weights_path)
         print(f"Saved updated model weights to {self.weights_path}")
