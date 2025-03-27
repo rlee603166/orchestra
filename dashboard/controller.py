@@ -222,7 +222,7 @@ class Controller:
 
             for future in futures:
                 try:
-                    response = future.result(timeout=15)  # Increased timeout
+                    response = future.result()  # Increased timeout
                     response_text = response.content.decode('utf-8')  
                     response_data = json.loads(response_text)
                     print(f"Training response: {response_data}")
