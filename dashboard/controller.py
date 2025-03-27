@@ -31,8 +31,8 @@ class Controller:
         self.weights_path = f"finetuned-DeepSeek-R1-Distill-Llama-8B.pth"
         # self.nodes = ["http://localhost:5001", "http://localhost:5002"]
         self.nodes = [
-            "http://128.151.20.130:5000",
-            # "http://128.151.20.120:5000",
+            # "http://128.151.20.130:5000",
+            "http://128.151.20.120:5000",
             # "http://128.151.20.147:5000",
             # "http://128.151.20.235:5000"
         ]
