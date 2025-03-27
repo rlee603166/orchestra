@@ -140,7 +140,7 @@ function updateChart() {
 }
 
 function startUpdate() {
-    updateInterval = setInterval(updateChart, 1000);
+    updateInterval = setInterval(updateChart, 10000);
 }
 
 function stopUpdate() {

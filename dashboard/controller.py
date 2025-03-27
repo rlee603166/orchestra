@@ -32,9 +32,9 @@ class Controller:
         # self.nodes = ["http://localhost:5001", "http://localhost:5002"]
         self.nodes = [
             "http://128.151.20.130:5000",
-            "http://128.151.20.120:5000",
-            "http://128.151.20.147:5000",
-            "http://128.151.20.235:5000"
+            # "http://128.151.20.120:5000",
+            # "http://128.151.20.147:5000",
+            # "http://128.151.20.235:5000"
         ]
         self.metrics = { "step": [], "loss": [], "accuracy": [] }
         self.step = 0
@@ -83,7 +83,7 @@ class Controller:
         
     def _initialize_weights(self):
         import os
-        save_dir = os.path.join(os.path.expanduser("~"), "model_weights")
+        save_dir = os.path.join(os.path.expanduser("~"), "\orchestra\dashboard\model_weights")
         os.makedirs(save_dir, exist_ok=True)
         
         self.weights_path = os.path.join(save_dir, "finetuned-DeepSeek-R1-Distill-Llama-8B.pth")
@@ -109,8 +109,9 @@ class Controller:
                 }
                 data = {"step": str(self.step)}
 
-                print(url)
+                print("sending weights")
                 training_result = requests.post(f"{url}/train", files=files, data=data)
+                print(training_result)
                 return training_result
         except requests.exceptions.ConnectionError as e:
             return { "error": f"Connection error: {e}" }
@@ -122,29 +123,41 @@ class Controller:
             executor.map(lambda n: self._send_weights(n), self.nodes)
 
     def get_nodes(self):
+        print(f"Attempting to get gradients from nodes: {self.nodes}")
         gradients = []
         with ThreadPoolExecutor() as executor:
             futures = [executor.submit(requests.get, f"{n}/gradients") for n in self.nodes]
             
-            for future in futures:
+            for i, future in enumerate(futures):
                 try:
+                    print(f"Waiting for response from node {self.nodes[i]}")
                     response = future.result(timeout=5)
+                    print(f"Received response from {self.nodes[i]}: {response.status_code}")
                     if response.status_code == 200:
+                        print(f"Content length: {len(response.content)} bytes")
                         gradient = torch.load(io.BytesIO(response.content), weights_only=False)
                         gradients.append(gradient)
+                        print(f"Successfully loaded gradient from {self.nodes[i]}")
                     else:
-                        print(f"Failed to get gradients: HTTP {response.status_code}")
+                        print(f"Failed to get gradients from {self.nodes[i]}: HTTP {response.status_code}")
+                        print(f"Response content: {response.text[:200]}...")
                 except requests.exceptions.ConnectionError as e:
-                    print(f"Connection error: {e}")
+                    print(f"Connection error to {self.nodes[i]}: {e}")
                 except Exception as e:
-                    print(f"Error retrieving gradients: {e}")
+                    print(f"Error retrieving gradients from {self.nodes[i]}: {e}")
         
+        if not gradients:
+            print("No gradients were retrieved from any nodes")
+            return {"status": "failed", "reason": "no gradients retrieved"}
+        
+        print(f"Successfully retrieved {len(gradients)} gradients")
         stacked = torch.stack(gradients)
-        average_gradients = torch.mean(gradients, dim=0)
+        average_gradients = torch.mean(stacked, dim=0)
         torch.save(average_gradients, self.weights_path)
-        return { "status": "averaged weights successfully" }
+        return {"status": "averaged weights successfully"}
 
     def _train_nodes(self):
+        print("fetching nodes")
         with ThreadPoolExecutor() as executor:
             futures = [executor.submit(self._send_weights, n) for n in self.nodes]
             node_loss = 0
@@ -153,9 +166,9 @@ class Controller:
             for future in futures:
                 try:
                     response = future.result(timeout=5)
-                    print(response)
                     response = response.content.decode('utf-8')  
                     response = json.loads(response)
+                    print(response)
                     if response is not None:
                         node_loss+=response["metrics"]["loss"]
                         node_accuracy+=response["metrics"]["accuracy"]
@@ -180,12 +193,14 @@ class Controller:
     def train_loop(self, stop_training):
         self._reset_stats()
         while self.step <= self.max_iters and not stop_training.is_set():
+            print(f"starting step: {self.step}")
             self._train_nodes()
+            print("updating stats")
             self._update_stats()
             start = time.time()
             self.get_nodes()
             end = time.time()
-            print(f"gradient avg: {end-start}")
+            print(f"gradient averaging time: {end-start}")
             self.step+=1
 
     def get_training_data(self):
