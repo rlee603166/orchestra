@@ -28,7 +28,7 @@ class Controller:
         self.model_id = model_id
         self.weights_path = f"finetuned-{self.model_id}.pth"
         # self.nodes = ["http://localhost:5001", "http://localhost:5002"]
-        self.nodes = ["http://128.151.20.95:5000"]
+        self.nodes = ["http://128.151.20.130:5000"]
         self.metrics = { "step": [], "loss": [], "accuracy": [] }
         self.step = 0
 
@@ -73,16 +73,18 @@ class Controller:
                     response = future.result(timeout=5)
                     if response.status_code == 200:
                         gradient = torch.load(io.BytesIO(response.content), weights_only=False)
-                        torch.save(gradient, "node.pth")
-                        # gradients.append(gradient)
+                        gradients.append(gradient)
                     else:
                         print(f"Failed to get gradients: HTTP {response.status_code}")
                 except requests.exceptions.ConnectionError as e:
                     print(f"Connection error: {e}")
                 except Exception as e:
                     print(f"Error retrieving gradients: {e}")
-                    
-        return gradients
+        
+        stacked = torch.stack(gradients)
+        average_gradients = torch.mean(gradients, dim=0)
+        torch.save(average_gradients, self.weights_path)
+        return { "status": "averaged weights successfully" }
 
     def _train_nodes(self):
         with ThreadPoolExecutor() as executor:
@@ -117,13 +119,16 @@ class Controller:
             self.metrics = { "step": [], "loss": [], "accuracy": [] } 
             json.dump(self.metrics, f)
 
-    def train_loop(self):
+    def train_loop(self, stop_training):
         self._reset_stats()
-        while self.step <= self.max_iters:
+        while self.step <= self.max_iters and not stop_training.is_set():
             self._train_nodes()
             self._update_stats()
+            start = time.time()
+            self.get_nodes()
+            end = time.time()
+            print(f"gradient avg: {end-start}")
             self.step+=1
-            time.sleep(2)
 
     def get_training_data(self):
         with open(self.training_log, "r") as f:

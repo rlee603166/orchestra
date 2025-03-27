@@ -66,23 +66,6 @@ def hello():
 
 
 """Training Endpoints"""
-# @app.post("/train")
-# async def train(
-#     weights: Annotated[UploadFile, File()],
-#     step: Annotated[int, Form()]
-# ):
-#     with open(service.received_weights, "wb") as f:
-#         content = await weights.read()
-#         f.write(content)
-
-# {
-#     "status": "train",
-#     "metrics": {
-#         "step": 0,
-#         "accuracy": 0.00048828125,
-#         "loss": 2.526911973953247
-#     }
-# }
 @app.post("/train")
 async def train(
     weights: Annotated[UploadFile, File()],

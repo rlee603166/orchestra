@@ -5,8 +5,6 @@ from flask_cors import CORS
 from controller import Controller, TinyModel
 import threading
 import requests
-import torch
-import torch.nn as nn
 
 
 model_id = "toy-model"
@@ -14,6 +12,8 @@ controller = Controller(model_id)
 
 app = Flask(__name__)
 CORS(app)
+
+stop_training = threading.Event()
 
 @app.route("/")
 def dashboard():
@@ -31,9 +31,23 @@ def ping():
 
 @app.route('/train', methods=["POST"])
 def train():
-    thread = threading.Thread(target=controller.train_loop)
+    if hasattr(threading, 'training_thread') and threading.training_thread.is_alive():
+        return {"status": "error", "message": "Training already in progress"}
+    
+    stop_training.clear()
+
+    thread = threading.Thread(target=controller.train_loop, args=(stop_training,))
+    thread.daemon = True
     thread.start()
     return { "status": "success" }
+
+@app.route('/stop', methods={'POST'})
+def stop():
+    if stop_training.is_set():
+        return { "message": "Training hasn't started" }
+    
+    stop_training.set()
+    return { "status": "success", "message": "Stopping training process" }
 
 @app.route('/training_data')
 def data():

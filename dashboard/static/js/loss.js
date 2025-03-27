@@ -113,7 +113,7 @@ const accChart = new Chart(accCtx, {
 let updateInterval;
 let isTraining = false;
 
-const mainNodeURL = "http://128.151.20.95:8081";
+const mainNodeURL = "http://localhost:8081";
 
 function updateChart() {
     console.log("fetching");
@@ -180,16 +180,17 @@ function startTraining() {
 function stopTraining() {
     if (!isTraining) return;
 
-    fetch(`${mainNodeURL}:5000/stop`, {
+    fetch(`${mainNodeURL}/stop`, {
         method: "POST",
     })
         .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
+
             return response.json();
         })
         .then(data => {
+            if (data.status !== "success") {
+                throw new Error(`HTTP error! Status: ${data.status}`);
+            }
             console.log("Training stopped:", data);
 
             isTraining = false;
