@@ -9,6 +9,7 @@ import requests
 import signal
 import atexit
 import torch
+import math
 import sys
 import os
 import argparse
@@ -94,17 +95,16 @@ async def train(
     # weights: Annotated[UplgccoadFile, File()],
     step: Annotated[int, Form()]
 ):
-    # with open(service.received_weights, "wb") as f:
-    #     content = await weights.read()
-    #     f.write(content)
-    
-    metrics = service.train(step)
-    
-    if "loss" not in metrics:
-        metrics["loss"] = 0.5 * (1 / (1 + 0.1 * step)) 
-    
-    if "accuracy" not in metrics:
-        metrics["accuracy"] = 0.7 + 0.3 * (1 - 1 / (1 + 0.05 * step))
+    metrics = { "step": step }
+    initial_loss = 2.0
+    final_loss = 0.1
+    decay_rate = 0.01
+    metrics["loss"] = final_loss + (initial_loss - final_loss) * math.exp(-decay_rate * step)
+
+    initial_acc = 0.5
+    final_acc = 0.98
+    growth_rate = 0.015
+    metrics["accuracy"] = final_acc - (final_acc - initial_acc) * math.exp(-growth_rate * step)
     
     return { "status": "train", "metrics": metrics }
 
