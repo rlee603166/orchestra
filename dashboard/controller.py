@@ -276,6 +276,7 @@ class Controller:
             end = time.time()
             # print(f"Gradient averaging completed in {end-start:.2f} seconds. Result: {result}")
             
+            time.sleep(1)
             self.step += 1
             print(f"Completed step {self.step-1}")
 
