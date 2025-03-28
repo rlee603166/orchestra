@@ -108,13 +108,14 @@ class Controller:
     def _send_weights(self, url):
         try:
             with open(self.weights_path, "rb") as w:
-                files = {
-                    "weights": (self.weights_path, w, "application/octet-stream")
-                }
+                # files = {
+                #     # "weights": (self.weights_path, w, "application/octet-stream")
+                # }
                 data = {"step": str(self.step)}
 
                 print(f"Sending weights to {url}")
-                training_result = requests.post(f"{url}/train", files=files, data=data)
+                # training_result = requests.post(f"{url}/train", files=files, data=data)
+                training_result = requests.post(f"{url}/train", data=data)
                 print(f"Response status: {training_result.status_code}")
                 return training_result
         except requests.exceptions.ConnectionError as e:
@@ -271,9 +272,9 @@ class Controller:
             
             print("Collecting and averaging gradients...")
             start = time.time()
-            result = self.get_nodes()
+            # result = self.get_nodes()
             end = time.time()
-            print(f"Gradient averaging completed in {end-start:.2f} seconds. Result: {result}")
+            # print(f"Gradient averaging completed in {end-start:.2f} seconds. Result: {result}")
             
             self.step += 1
             print(f"Completed step {self.step-1}")

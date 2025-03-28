@@ -91,22 +91,20 @@ def hello():
 # Artificial Data for demo
 @app.post("/train")
 async def train(
-    weights: Annotated[UploadFile, File()],
+    # weights: Annotated[UplgccoadFile, File()],
     step: Annotated[int, Form()]
 ):
-    with open(service.received_weights, "wb") as f:
-        content = await weights.read()
-        f.write(content)
+    # with open(service.received_weights, "wb") as f:
+    #     content = await weights.read()
+    #     f.write(content)
     
-    # Generate artificial metrics including loss and accuracy
     metrics = service.train(step)
     
-    # Add artificial loss and accuracy if not already present
     if "loss" not in metrics:
-        metrics["loss"] = 0.5 * (1 / (1 + 0.1 * step))  # Decreasing loss function
+        metrics["loss"] = 0.5 * (1 / (1 + 0.1 * step)) 
     
     if "accuracy" not in metrics:
-        metrics["accuracy"] = 0.7 + 0.3 * (1 - 1 / (1 + 0.05 * step))  # Increasing accuracy function
+        metrics["accuracy"] = 0.7 + 0.3 * (1 - 1 / (1 + 0.05 * step))
     
     return { "status": "train", "metrics": metrics }
 
