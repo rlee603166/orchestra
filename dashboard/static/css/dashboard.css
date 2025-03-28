@@ -54,7 +54,7 @@ body {
 
 .title-container {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
 }
 
 .header-content {

@@ -113,7 +113,7 @@ const accChart = new Chart(accCtx, {
 let updateInterval;
 let isTraining = false;
 
-const mainNodeURL = "http://localhost:8081";
+const mainNodeURL = "http://128.151.20.130:8081";
 
 function updateChart() {
     console.log("fetching");

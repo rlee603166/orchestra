@@ -126,5 +126,5 @@ document.addEventListener("DOMContentLoaded", function () {
     renderGPUNodes();
     updateGPUData();
 
-    setInterval(updateGPUData, 5000);
+    setInterval(updateGPUData, 15000);
 });
