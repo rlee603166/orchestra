@@ -103,7 +103,7 @@ class LLMService:
         self.train_dataset = train_dataset.map(self._format_prompts, batched=True)
         self.train_loader = DataLoader(
             self.train_dataset,
-            batch_size=10,
+            batch_size=15,
             shuffle=True,
             num_workers=0
         )
@@ -267,6 +267,7 @@ class LLMService:
             temp = self._get_gpu_temp() 
             status = self._catogorize_gpu_status(util, int(used_memory/total_memory*100), temp)
             return {
+                "rank": self.rank,
                 "gpu_stats": {
                     "vram_used_gpu": round(used_memory, 2),
                     "vram_total_gb": round(total_memory, 2)

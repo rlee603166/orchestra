@@ -90,7 +90,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 console.log(data, null, 2);
 
                 const formattedGpu = {
-                    id: id || "PC10",
+                    id: data.rank,
                     utilization: data.gpu_util,
                     memory: data.gpu_stats.vram_used_gpu,
                     memoryTotal: data.gpu_stats.vram_total_gb,
